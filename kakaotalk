@@ -8,7 +8,7 @@ export WINEPREFIX=$KAKAOTALK_PREFIX/wine
 export WINEDEBUG=-all
 
 KAKAOTALK_SRC="http://app.pc.kakao.com/talk/win32/KakaoTalk_Setup.exe"
-KAKAOTALK_BIN_DIR="$WINEPREFIX"/drive_c/"Program Files"/kakaotalk
+KAKAOTALK_BIN_DIR="$WINEPREFIX/drive_c/Program Files/kakaotalk"
 if [ -z "${TMPDIR}" ] ; then
     KAKAOTALK_TMP_DIR=/tmp/kakaotalk
 else
@@ -43,7 +43,7 @@ print_help() {
 		  --verbose        Print warning message from Wine
 
 		  -V,
-		  --version        print version
+		  --version        Print version
 
 		  --regedit        Open registry editor
 
