@@ -1,0 +1,163 @@
+#!/bin/bash
+set -e
+VERSION=0.1.0
+KAKAOTALK_PREFIX="$HOME"/.kakaotalk
+
+export WINEARCH=win32
+export WINEPREFIX=$KAKAOTALK_PREFIX/wine
+export WINEDEBUG=-all
+
+KAKAOTALK_SRC="http://app.pc.kakao.com/talk/win32/KakaoTalk_Setup.exe"
+KAKAOTALK_BIN_DIR="$WINEPREFIX"/drive_c/"Program Files"/kakaotalk
+if [ -z "${TMPDIR}" ] ; then
+    KAKAOTALK_TMP_DIR=/tmp/kakaotalk
+else
+    KAKAOTALK_TMP_DIR="${TMPDIR}/kakaotalk"
+fi
+
+echo $TMPDIR
+
+INSTALL_LOCK="$KAKAOTALK_PREFIX"/install.lock
+INSTALL_INFO="$KAKAOTALK_PREFIX"/installed
+
+OUT_OUTPUT=`getopt -o hcvV --long help,reinstall,config,install-trick,regedit,verbose,version -n "$0" -- "$@"`
+
+DEBUG_PIPE="/dev/null"
+
+if [ $? != 0 ] ; then return 1 ; fi
+eval set -- "$OUT_OUTPUT";
+
+print_help() {
+    cat <<-EOF
+		KakaoTalk for Wine
+		USAGE: $0 [OPTIONS]
+		OPTIONS
+
+		  -h,
+		  --help           Print this
+
+		  -c,
+		  --config         Open winecfg
+
+		  -v,
+		  --verbose        Print warning message from Wine
+
+		  -V,
+		  --version        print version
+
+		  --regedit        Open registry editor
+
+		  --reinstall      Force reinstall Wine environment
+		                   Useful after major Wine update
+
+		  --install-trick  Install recommended winetricks
+		                   Useful when Wine version is low
+		                   (gdiplus, riched20, riched30, wmp9)
+
+	EOF
+    return;
+}
+
+install_if_not() {
+    if [ -e $INSTALL_LOCK ] ; then
+        >&2 echo "Another instance is already installing."
+        >&2 echo "If you're sure it's not the case, run with --reinstall"
+        exit 1;
+    fi
+    if [ -e $INSTALL_INFO ] ; then
+        return 0;
+    fi
+    mkdir -p $KAKAOTALK_TMP_DIR
+    mkdir -p $WINEPREFIX
+    touch $INSTALL_LOCK
+
+    echo "Bootstraping Wine into $WINEPREFIX"
+	# Disable mono / gecko dialogue
+	WINEDLLOVERRIDES="mscoree,mshtml=" wineboot -u
+
+    echo "Download kakaotalk installer into $INSTALLER_PATH"
+    INSTALLER_PATH="$KAKAOTALK_TMP_DIR"/installer.exe
+    (
+    curl $KAKAOTALK_SRC -o $INSTALLER_PATH 2>&1 \
+        | stdbuf -oL tr '\r' '\n'\
+        | sed -u 's/^ *\([0-9][0-9]*\).*\( [0-9].*$\)/\1\n#Downloading KakaoTalk... \:\2/'
+    ) | zenity --auto-close --no-cancel --progress --title "KakaoTalk Installer" --width 400 --time-remaining
+
+    echo "Extract kakaotalk installer into $KAKAOTALK_BIN_DIR"
+    7z x -o"$KAKAOTALK_BIN_DIR" "$INSTALLER_PATH" 1>$DEBUG_PIPE
+
+    echo "Updating Registry..."
+    echo $'Windows Registry Editor Version 5.00\r
+[HKEY_CURRENT_USER\Software\Wine\AppDefaults\KakaoTalk.exe]\r
+"Version"="winxp"\r\n\r\n' > "$KAKAOTALK_TMP_DIR"/winver.reg
+
+    wine regedit "$KAKAOTALK_TMP_DIR"/winver.reg
+
+    rm $INSTALL_LOCK
+    touch $INSTALL_INFO
+    echo "Done"
+}
+
+install_trick() {
+    install_if_not
+    winetricks gdiplus riched20 riched30 wmp9
+}
+
+launch_config() {
+    install_if_not
+    exec winecfg
+}
+
+launch_regedit() {
+    install_if_not
+    exec wine regedit
+}
+
+launch_kakaotalk() {
+    install_if_not
+    exec wine "$KAKAOTALK_BIN_DIR"/KakaoTalk.exe
+}
+
+for arg in "$@"
+do
+	[[ $arg =~ ^-h|--help ]] && {
+		print_help
+        exit 0
+    };
+
+    [[ $arg =~ ^-V|--version ]] && {
+        echo $VERSION
+        exit 0
+    };
+
+    [[ $arg =~ ^-v|--verbose ]] && {
+        DEBUG_PIPE="&2"
+        export WINEDEBUG=
+    };
+
+    [[ $arg =~ ^--reinstall ]] && {
+        rm -rf $KAKAOTALK_PREFIX
+    };
+
+    [[ $arg =~ ^-c|--config ]] && {
+        RUN_CONFIG=1
+    };
+
+    [[ $arg =~ ^--regedit ]] && {
+        RUN_REGEDIT=1
+    };
+
+    [[ $arg =~ ^--install-trick ]] && {
+        RUN_TRICK=1
+    };
+done
+
+if [ ! -z $RUN_CONFIG ]; then
+    launch_config
+elif [ ! -z $RUN_REGEDIT ]; then
+    launch_regedit
+elif [ ! -z $RUN_TRICK ]; then
+    install_trick
+else
+    launch_kakaotalk
+fi
